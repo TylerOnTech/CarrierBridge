@@ -92,6 +92,18 @@ describe('Carrier C adapter: Playwright against the local mock portal', () => {
     });
   });
 
+  it('does not let Playwright install signal handlers that would kill Chromium before a graceful drain', async () => {
+    const fresh = new BrowserManager({ headless: true, executablePath: process.env.BROWSER_EXECUTABLE_PATH, logger: createLogger({ level: 'silent', pretty: false }) });
+    const before = ['SIGTERM', 'SIGINT', 'SIGHUP'].map((s) => process.listenerCount(s));
+    const context = await fresh.newContext();
+    try {
+      expect(['SIGTERM', 'SIGINT', 'SIGHUP'].map((s) => process.listenerCount(s))).toEqual(before);
+    } finally {
+      await context.close();
+      await fresh.close();
+    }
+  });
+
   it('stops promptly when the task deadline aborts the retrieval', async () => {
     mocks.carrierC.faults.add({ method: 'GET', path: '/policies/*', action: { type: 'delay', ms: 4_000 } });
     const controller = new AbortController();

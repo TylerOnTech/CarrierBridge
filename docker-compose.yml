@@ -1,0 +1,91 @@
+# Local stack: Postgres, three mock carriers, a one-shot migrate+seed job, the API, and a worker.
+#   docker compose up --build
+# Then open http://localhost:3000/docs
+name: carrierbridge
+
+x-app: &app
+  build: .
+  image: carrierbridge:local
+  init: true # reaps Chromium child processes and forwards SIGTERM
+  environment: &app-env
+    NODE_ENV: production
+    LOG_LEVEL: ${LOG_LEVEL:-info}
+    DATABASE_URL: postgresql://carrierbridge:carrierbridge@postgres:5432/carrierbridge
+    # Development-only key. Generate your own for anything real:
+    #   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+    CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:-ZGV2LW9ubHkta2V5LWRvLW5vdC11c2UtaW4tcHJvZCE=}
+    CARRIER_A_BASE_URL: http://mock-carriers:4001
+    CARRIER_B_BASE_URL: http://mock-carriers:4002
+    CARRIER_C_BASE_URL: http://mock-carriers:4003
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    environment:
+      POSTGRES_USER: carrierbridge
+      POSTGRES_PASSWORD: carrierbridge
+      POSTGRES_DB: carrierbridge
+    ports:
+      - '5433:5432' # 5433 on the host to avoid clashing with a local Postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U carrierbridge -d carrierbridge']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  mock-carriers:
+    <<: *app
+    command: ['node', 'dist/mock-carriers/server.js']
+    environment:
+      CARRIER_B_FAIL_EVERY: ${CARRIER_B_FAIL_EVERY:-3} # every 3rd legacy list call returns a 503 page
+      CARRIER_A_RATE_LIMIT: ${CARRIER_A_RATE_LIMIT:-20}
+    ports:
+      - '4001:4001'
+      - '4002:4002'
+      - '4003:4003'
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:4003/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    <<: *app
+    command: ['sh', '-c', 'npx prisma migrate deploy && node dist/prisma/seed.js']
+    restart: 'no'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    environment:
+      <<: *app-env
+      PROCESS_ROLE: api
+    ports:
+      - '3000:3000'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  worker:
+    <<: *app
+    environment:
+      <<: *app-env
+      PROCESS_ROLE: worker
+    stop_grace_period: 30s # in-flight tasks get SHUTDOWN_TIMEOUT_MS (15s) to finish, then are released
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      mock-carriers:
+        condition: service_healthy
+
+volumes:
+  pgdata:
