@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import './schemas.js';
-import { APP_VERSION } from './routes/health.js';
+import { APP_VERSION } from '../version.js';
 
 const ref = (id: string) => ({ $ref: `#/components/schemas/${id}` });
 const json = (schemaId: string, description: string) => ({

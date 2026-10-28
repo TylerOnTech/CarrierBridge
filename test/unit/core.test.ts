@@ -5,6 +5,7 @@ import { normalizedPolicyJsonSchema } from '../../src/contracts/json-schema.js';
 import { CarrierError, isRetryableCategory } from '../../src/domain/errors.js';
 import { derivePullStatus, type TaskStatus } from '../../src/domain/pull-status.js';
 import { buildOpenApiDocument } from '../../src/http/openapi.js';
+import { APP_VERSION } from '../../src/version.js';
 import { canonicalJson } from '../../src/lib/canonical-json.js';
 import { mapWithConcurrency } from '../../src/lib/concurrency.js';
 import { Secret } from '../../src/lib/secret.js';
@@ -125,6 +126,11 @@ describe('mapWithConcurrency', () => {
 });
 
 describe('published artifacts are in sync with the code', () => {
+  it('APP_VERSION matches package.json', () => {
+    const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string };
+    expect(APP_VERSION).toBe(pkg.version);
+  });
+
   it('docs/openapi.json matches the generated document (run npm run generate:openapi)', () => {
     const committed: unknown = JSON.parse(readFileSync(new URL('../../docs/openapi.json', import.meta.url), 'utf8'));
     expect(committed).toEqual(buildOpenApiDocument());

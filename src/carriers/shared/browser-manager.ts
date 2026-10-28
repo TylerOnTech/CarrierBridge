@@ -29,7 +29,15 @@ export class BrowserManager {
 
   private getBrowser(): Promise<Browser> {
     this.browser ??= chromium
-      .launch({ headless: this.options.headless, executablePath: this.options.executablePath })
+      .launch({
+        headless: this.options.headless,
+        executablePath: this.options.executablePath,
+        // Playwright kills Chromium on SIGTERM/SIGINT by default, which would cut off
+        // in-flight scrapes before the worker's graceful drain. Shutdown closes it instead.
+        handleSIGTERM: false,
+        handleSIGINT: false,
+        handleSIGHUP: false,
+      })
       .then((browser) => {
         this.options.logger.info({ version: browser.version() }, 'browser launched');
         browser.on('disconnected', () => {

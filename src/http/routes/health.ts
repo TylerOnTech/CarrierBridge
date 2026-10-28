@@ -2,8 +2,8 @@ import { Router } from 'express';
 import type { PrismaClient } from '../../persistence/prisma.js';
 import type { z } from 'zod';
 import type { HealthSchema } from '../schemas.js';
+import { APP_VERSION } from '../../version.js';
 
-export const APP_VERSION = process.env.npm_package_version ?? '0.1.0';
 
 export function healthRouter(deps: { prisma: PrismaClient; isShuttingDown: () => boolean }): Router {
   const router = Router();
