@@ -40,23 +40,36 @@ export class PortalPages {
     return this.currentPath() === LOGIN_PATH ? 'login_required' : 'ok';
   }
 
+  /** True if the browser is already showing `path` (pathname and query). */
+  isAt(path: string): boolean {
+    const current = new URL(this.page.url());
+    const target = new URL(path, this.baseUrl);
+    return current.pathname === target.pathname && current.search === target.search;
+  }
+
   /** Submits the login form on the current page (navigating to it first if needed). */
   async login(credentials: UsernamePasswordCredentials): Promise<void> {
     if (this.currentPath() !== LOGIN_PATH) await this.goto(LOGIN_PATH);
     await this.requireElement(SELECTORS.login.username, 'login form');
     await this.page.fill(SELECTORS.login.username, credentials.username);
     await this.page.fill(SELECTORS.login.password, credentials.password.reveal());
-    await this.page.click(SELECTORS.login.submit);
+    // Register the wait before clicking so the post-submit document cannot be missed.
+    await Promise.all([this.page.waitForEvent('domcontentloaded'), this.page.click(SELECTORS.login.submit)]);
 
-    // Either we land somewhere authenticated, or the login page re-renders with an error.
-    const landed = this.page.locator(`${SELECTORS.dashboard.root}, ${SELECTORS.policy.root}, ${SELECTORS.login.error}`);
-    await landed.first().waitFor({ state: 'attached' });
     if ((await this.page.locator(SELECTORS.login.error).count()) > 0) {
       throw new CarrierError({
         carrierId: this.carrierId,
         category: 'authentication',
         code: 'invalid_credentials',
         message: 'Portal rejected the supplied credentials',
+      });
+    }
+    if (this.currentPath() === LOGIN_PATH) {
+      throw new CarrierError({
+        carrierId: this.carrierId,
+        category: 'session_expired',
+        code: 'session_not_established',
+        message: 'Portal returned to the login page immediately after a successful sign-in',
       });
     }
   }

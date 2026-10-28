@@ -1,0 +1,1435 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "CarrierBridge API",
+    "version": "0.1.0",
+    "description": "Retrieve insurance policies from heterogeneous carriers (REST, legacy, browser portal) and read them back in one normalized, versioned schema. Pulls run asynchronously: create one, poll it, then page through its policies."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Pulls"
+    },
+    {
+      "name": "Policies"
+    },
+    {
+      "name": "Carriers"
+    },
+    {
+      "name": "Operations"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Operations"
+        ],
+        "summary": "Liveness and readiness",
+        "responses": {
+          "200": {
+            "description": "Healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Degraded or shutting down",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/carriers": {
+      "get": {
+        "tags": [
+          "Carriers"
+        ],
+        "summary": "List supported carriers and the credentials each expects",
+        "responses": {
+          "200": {
+            "description": "Registered carriers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CarrierList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pulls": {
+      "post": {
+        "tags": [
+          "Pulls"
+        ],
+        "summary": "Start an asynchronous policy pull across one or more carriers",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Retries with the same key and body return the original pull (200). Reusing a key with a different body is rejected (422).",
+            "schema": {
+              "type": "string",
+              "maxLength": 255
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePullRequest"
+              },
+              "example": {
+                "connections": [
+                  {
+                    "carrierId": "carrier-a",
+                    "credentials": {
+                      "username": "alex.rivera@example.com",
+                      "password": "apex-demo-1"
+                    }
+                  },
+                  {
+                    "carrierId": "carrier-b",
+                    "credentials": {
+                      "username": "ARIVERA",
+                      "password": "Legacy#2024"
+                    }
+                  },
+                  {
+                    "carrierId": "carrier-c",
+                    "credentials": {
+                      "username": "arivera",
+                      "password": "portal-demo-1"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Idempotent replay of an existing pull",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pull"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Pull accepted; poll the Location header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pull"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-Id": {
+                "description": "Correlation ID (echoed or generated)",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type is not application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Idempotency-Key reused with a different body",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pulls/{id}": {
+      "get": {
+        "tags": [
+          "Pulls"
+        ],
+        "summary": "Get pull status, per-carrier outcome, and errors",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The pull",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pull"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid id",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pulls/{id}/policies": {
+      "get": {
+        "tags": [
+          "Policies"
+        ],
+        "summary": "List normalized policies retrieved by a pull (keyset paginated)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "carrierId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor from pagination.nextCursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of policies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pull not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/policies/{id}": {
+      "get": {
+        "tags": [
+          "Policies"
+        ],
+        "summary": "Get one normalized policy",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The policy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyResource"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid id",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "PersonName": {
+        "$id": "#/components/schemas/PersonName",
+        "type": "object",
+        "properties": {
+          "fullName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "firstName": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastName": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "fullName",
+          "firstName",
+          "lastName"
+        ],
+        "additionalProperties": false
+      },
+      "Premium": {
+        "$id": "#/components/schemas/Premium",
+        "type": "object",
+        "properties": {
+          "amountCents": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Integer minor units (cents). Never floating point."
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "description": "ISO 4217 currency code"
+          },
+          "term": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "monthly",
+                  "quarterly",
+                  "semi_annual",
+                  "annual"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Billing term the amount covers; null if not stated"
+          }
+        },
+        "required": [
+          "amountCents",
+          "currency",
+          "term"
+        ],
+        "additionalProperties": false
+      },
+      "Coverage": {
+        "$id": "#/components/schemas/Coverage",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "bodily_injury_liability",
+              "property_damage_liability",
+              "combined_single_limit",
+              "uninsured_motorist",
+              "underinsured_motorist",
+              "medical_payments",
+              "personal_injury_protection",
+              "collision",
+              "comprehensive",
+              "rental_reimbursement",
+              "roadside_assistance",
+              "dwelling",
+              "other_structures",
+              "personal_property",
+              "loss_of_use",
+              "personal_liability",
+              "umbrella_liability",
+              "other"
+            ]
+          },
+          "carrierCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limitCents": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991,
+                "description": "Integer minor units (cents). Never floating point."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per-person / primary limit"
+          },
+          "perOccurrenceLimitCents": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991,
+                "description": "Integer minor units (cents). Never floating point."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Second half of a split limit (e.g. 100/300)"
+          },
+          "deductibleCents": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991,
+                "description": "Integer minor units (cents). Never floating point."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "carrierCode",
+          "limitCents",
+          "perOccurrenceLimitCents",
+          "deductibleCents"
+        ],
+        "additionalProperties": false
+      },
+      "Vehicle": {
+        "$id": "#/components/schemas/Vehicle",
+        "type": "object",
+        "properties": {
+          "vin": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1900,
+                "maximum": 2100
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "make": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "vin",
+          "year",
+          "make",
+          "model"
+        ],
+        "additionalProperties": false
+      },
+      "NormalizationWarning": {
+        "$id": "#/components/schemas/NormalizationWarning",
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "code",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "SourceMetadata": {
+        "$id": "#/components/schemas/SourceMetadata",
+        "type": "object",
+        "properties": {
+          "integrationType": {
+            "type": "string",
+            "enum": [
+              "rest_api",
+              "legacy_api",
+              "browser"
+            ]
+          },
+          "adapterVersion": {
+            "type": "string"
+          },
+          "rawValues": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NormalizationWarning"
+            }
+          }
+        },
+        "required": [
+          "integrationType",
+          "adapterVersion",
+          "rawValues",
+          "warnings"
+        ],
+        "additionalProperties": false
+      },
+      "NormalizedPolicy": {
+        "$id": "#/components/schemas/NormalizedPolicy",
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "const": "1.0.0"
+          },
+          "carrierId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "externalPolicyId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "policyholder": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PersonName"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "policyType": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "motorcycle",
+              "homeowners",
+              "condo",
+              "renters",
+              "umbrella",
+              "other"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "pending",
+              "cancelled",
+              "expired",
+              "unknown"
+            ]
+          },
+          "effectiveDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                "description": "Calendar date, YYYY-MM-DD. Policy dates carry no time zone."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expirationDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                "description": "Calendar date, YYYY-MM-DD. Policy dates carry no time zone."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "premium": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Premium"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coverages": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Coverage"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vehicles": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Vehicle"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "drivers": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PersonName"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retrievedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+            "description": "When CarrierBridge retrieved the data (UTC instant)"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceMetadata"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "carrierId",
+          "externalPolicyId",
+          "policyholder",
+          "policyType",
+          "status",
+          "effectiveDate",
+          "expirationDate",
+          "premium",
+          "coverages",
+          "vehicles",
+          "drivers",
+          "retrievedAt",
+          "source"
+        ],
+        "additionalProperties": false,
+        "description": "Carrier-agnostic insurance policy, contract v1"
+      },
+      "CreatePullRequest": {
+        "$id": "#/components/schemas/CreatePullRequest",
+        "type": "object",
+        "properties": {
+          "connections": {
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "carrierId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "credentials": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {},
+                  "description": "Carrier-specific credentials. GET /carriers lists the fields each carrier expects."
+                }
+              },
+              "required": [
+                "carrierId",
+                "credentials"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "connections"
+        ],
+        "additionalProperties": false
+      },
+      "Problem": {
+        "$id": "#/components/schemas/Problem",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "detail": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "instance",
+          "code",
+          "requestId"
+        ],
+        "additionalProperties": false,
+        "description": "RFC 9457 problem details"
+      },
+      "CarrierError": {
+        "$id": "#/components/schemas/CarrierError",
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "authentication",
+              "session_expired",
+              "rate_limited",
+              "carrier_unavailable",
+              "timeout",
+              "invalid_response",
+              "cancelled",
+              "internal"
+            ]
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "category",
+          "code",
+          "message",
+          "retryable"
+        ],
+        "additionalProperties": false
+      },
+      "RetrievalWarning": {
+        "$id": "#/components/schemas/RetrievalWarning",
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "externalPolicyId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "FailedAttempt": {
+        "$id": "#/components/schemas/FailedAttempt",
+        "type": "object",
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "category": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempt",
+          "category",
+          "code",
+          "message",
+          "retryable",
+          "at"
+        ],
+        "additionalProperties": false
+      },
+      "PullCarrier": {
+        "$id": "#/components/schemas/PullCarrier",
+        "type": "object",
+        "properties": {
+          "carrierId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "succeeded",
+              "failed"
+            ]
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "maxAttempts": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "policyCount": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextAttemptAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set while a retry is scheduled"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CarrierError"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Final error if failed, or the last attempt error while retrying"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RetrievalWarning"
+            }
+          },
+          "attemptHistory": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FailedAttempt"
+            }
+          }
+        },
+        "required": [
+          "carrierId",
+          "status",
+          "attempts",
+          "maxAttempts",
+          "policyCount",
+          "startedAt",
+          "completedAt",
+          "nextAttemptAt",
+          "error",
+          "warnings",
+          "attemptHistory"
+        ],
+        "additionalProperties": false
+      },
+      "Pull": {
+        "$id": "#/components/schemas/Pull",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "succeeded",
+              "partially_succeeded",
+              "failed"
+            ]
+          },
+          "idempotencyKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "carriersTotal": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "carriersSucceeded": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "carriersFailed": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "carriersInProgress": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "policiesRetrieved": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "carriersTotal",
+              "carriersSucceeded",
+              "carriersFailed",
+              "carriersInProgress",
+              "policiesRetrieved"
+            ],
+            "additionalProperties": false
+          },
+          "carriers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PullCarrier"
+            }
+          },
+          "links": {
+            "type": "object",
+            "properties": {
+              "self": {
+                "type": "string"
+              },
+              "policies": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "self",
+              "policies"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "idempotencyKey",
+          "createdAt",
+          "startedAt",
+          "completedAt",
+          "summary",
+          "carriers",
+          "links"
+        ],
+        "additionalProperties": false
+      },
+      "PolicyResource": {
+        "$id": "#/components/schemas/PolicyResource",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "pullId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/NormalizedPolicy"
+          }
+        },
+        "required": [
+          "id",
+          "pullId",
+          "createdAt",
+          "policy"
+        ],
+        "additionalProperties": false
+      },
+      "PolicyList": {
+        "$id": "#/components/schemas/PolicyList",
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PolicyResource"
+            }
+          },
+          "pagination": {
+            "type": "object",
+            "properties": {
+              "limit": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "limit",
+              "nextCursor"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data",
+          "pagination"
+        ],
+        "additionalProperties": false
+      },
+      "Carrier": {
+        "$id": "#/components/schemas/Carrier",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "integrationType": {
+            "type": "string",
+            "enum": [
+              "rest_api",
+              "legacy_api",
+              "browser"
+            ]
+          },
+          "adapterVersion": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "maxConcurrentRetrievals": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "credentialFields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "name",
+                "label",
+                "secret"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "integrationType",
+          "adapterVersion",
+          "description",
+          "maxConcurrentRetrievals",
+          "credentialFields"
+        ],
+        "additionalProperties": false
+      },
+      "CarrierList": {
+        "$id": "#/components/schemas/CarrierList",
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Carrier"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "additionalProperties": false
+      },
+      "Health": {
+        "$id": "#/components/schemas/Health",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded",
+              "shutting_down"
+            ]
+          },
+          "version": {
+            "type": "string"
+          },
+          "uptimeSeconds": {
+            "type": "number"
+          },
+          "checks": {
+            "type": "object",
+            "properties": {
+              "database": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "error"
+                ]
+              }
+            },
+            "required": [
+              "database"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "status",
+          "version",
+          "uptimeSeconds",
+          "checks"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

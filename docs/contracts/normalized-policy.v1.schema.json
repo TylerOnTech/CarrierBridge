@@ -1,0 +1,438 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/NormalizedPolicy",
+  "$defs": {
+    "NormalizedPolicy": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "const": "1.0.0"
+        },
+        "carrierId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "externalPolicyId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "policyholder": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PersonName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "policyType": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "motorcycle",
+            "homeowners",
+            "condo",
+            "renters",
+            "umbrella",
+            "other"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "pending",
+            "cancelled",
+            "expired",
+            "unknown"
+          ]
+        },
+        "effectiveDate": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+              "description": "Calendar date, YYYY-MM-DD. Policy dates carry no time zone."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expirationDate": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+              "description": "Calendar date, YYYY-MM-DD. Policy dates carry no time zone."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "premium": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Premium"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "coverages": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Coverage"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "vehicles": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Vehicle"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "drivers": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/PersonName"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retrievedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+          "description": "When CarrierBridge retrieved the data (UTC instant)"
+        },
+        "source": {
+          "$ref": "#/$defs/SourceMetadata"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "carrierId",
+        "externalPolicyId",
+        "policyholder",
+        "policyType",
+        "status",
+        "effectiveDate",
+        "expirationDate",
+        "premium",
+        "coverages",
+        "vehicles",
+        "drivers",
+        "retrievedAt",
+        "source"
+      ],
+      "additionalProperties": false,
+      "description": "Carrier-agnostic insurance policy, contract v1"
+    },
+    "PersonName": {
+      "type": "object",
+      "properties": {
+        "fullName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "firstName": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastName": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "fullName",
+        "firstName",
+        "lastName"
+      ],
+      "additionalProperties": false
+    },
+    "Premium": {
+      "type": "object",
+      "properties": {
+        "amountCents": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Integer minor units (cents). Never floating point."
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$",
+          "description": "ISO 4217 currency code"
+        },
+        "term": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "monthly",
+                "quarterly",
+                "semi_annual",
+                "annual"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Billing term the amount covers; null if not stated"
+        }
+      },
+      "required": [
+        "amountCents",
+        "currency",
+        "term"
+      ],
+      "additionalProperties": false
+    },
+    "Coverage": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "bodily_injury_liability",
+            "property_damage_liability",
+            "combined_single_limit",
+            "uninsured_motorist",
+            "underinsured_motorist",
+            "medical_payments",
+            "personal_injury_protection",
+            "collision",
+            "comprehensive",
+            "rental_reimbursement",
+            "roadside_assistance",
+            "dwelling",
+            "other_structures",
+            "personal_property",
+            "loss_of_use",
+            "personal_liability",
+            "umbrella_liability",
+            "other"
+          ]
+        },
+        "carrierCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limitCents": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Integer minor units (cents). Never floating point."
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Per-person / primary limit"
+        },
+        "perOccurrenceLimitCents": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Integer minor units (cents). Never floating point."
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Second half of a split limit (e.g. 100/300)"
+        },
+        "deductibleCents": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Integer minor units (cents). Never floating point."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "carrierCode",
+        "limitCents",
+        "perOccurrenceLimitCents",
+        "deductibleCents"
+      ],
+      "additionalProperties": false
+    },
+    "Vehicle": {
+      "type": "object",
+      "properties": {
+        "vin": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "year": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1900,
+              "maximum": 2100
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "make": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "vin",
+        "year",
+        "make",
+        "model"
+      ],
+      "additionalProperties": false
+    },
+    "SourceMetadata": {
+      "type": "object",
+      "properties": {
+        "integrationType": {
+          "type": "string",
+          "enum": [
+            "rest_api",
+            "legacy_api",
+            "browser"
+          ]
+        },
+        "adapterVersion": {
+          "type": "string"
+        },
+        "rawValues": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NormalizationWarning"
+          }
+        }
+      },
+      "required": [
+        "integrationType",
+        "adapterVersion",
+        "rawValues",
+        "warnings"
+      ],
+      "additionalProperties": false
+    },
+    "NormalizationWarning": {
+      "type": "object",
+      "properties": {
+        "field": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "code",
+        "message"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$id": "urn:carrierbridge:contract:normalized-policy:1.0.0",
+  "title": "NormalizedPolicy v1.0.0"
+}
