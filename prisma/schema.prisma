@@ -1,0 +1,115 @@
+// CarrierBridge persistence model.
+//
+// A Pull is one client request to retrieve policies from one or more carriers.
+// Each (pull, carrier) pair becomes a PullTask: the unit of work that the
+// Postgres-backed worker queue claims, leases, retries, and completes.
+// Policies are immutable snapshots produced by a successful task.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PullStatus {
+  pending
+  running
+  succeeded
+  partially_succeeded
+  failed
+}
+
+enum TaskStatus {
+  pending
+  running
+  succeeded
+  failed
+}
+
+model Pull {
+  id                 String     @id @default(uuid()) @db.Uuid
+  status             PullStatus @default(pending)
+  /// Client-supplied Idempotency-Key header. Unique so concurrent duplicates collapse to one pull.
+  idempotencyKey     String?    @unique @map("idempotency_key") @db.VarChar(255)
+  /// HMAC-SHA256 of the canonical request body. Detects key reuse with a different payload
+  /// without storing anything from which credentials could be recovered.
+  requestFingerprint String     @map("request_fingerprint") @db.Char(64)
+  /// Request ID of the HTTP request that created the pull; propagated into worker logs.
+  correlationId      String     @map("correlation_id") @db.VarChar(128)
+  createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  startedAt          DateTime?  @map("started_at") @db.Timestamptz(3)
+  completedAt        DateTime?  @map("completed_at") @db.Timestamptz(3)
+
+  tasks    PullTask[]
+  policies Policy[]
+
+  @@index([status, createdAt])
+  @@map("pulls")
+}
+
+model PullTask {
+  id                   String     @id @default(uuid()) @db.Uuid
+  pullId               String     @map("pull_id") @db.Uuid
+  carrierId            String     @map("carrier_id") @db.VarChar(64)
+  status               TaskStatus @default(pending)
+  attempts             Int        @default(0)
+  maxAttempts          Int        @map("max_attempts")
+  /// Earliest time the task may be claimed. Used for durable retry backoff.
+  availableAt          DateTime   @default(now()) @map("available_at") @db.Timestamptz(3)
+  /// Fencing token issued on each claim. Completion must present the current token,
+  /// so a worker whose lease expired cannot overwrite a newer attempt's result.
+  leaseToken           String?    @map("lease_token") @db.Uuid
+  leaseExpiresAt       DateTime?  @map("lease_expires_at") @db.Timestamptz(3)
+  /// AES-256-GCM sealed credentials. Set to NULL as soon as the task reaches a terminal state.
+  encryptedCredentials String?    @map("encrypted_credentials")
+  errorCategory        String?    @map("error_category") @db.VarChar(64)
+  errorCode            String?    @map("error_code") @db.VarChar(128)
+  errorMessage         String?    @map("error_message")
+  errorRetryable       Boolean?   @map("error_retryable")
+  /// Non-fatal data-quality findings (skipped records, unparseable fields).
+  warnings             Json       @default("[]")
+  /// One entry per failed attempt: { attempt, category, code, message, at }.
+  attemptHistory       Json       @default("[]") @map("attempt_history")
+  policyCount          Int        @default(0) @map("policy_count")
+  startedAt            DateTime?  @map("started_at") @db.Timestamptz(3)
+  completedAt          DateTime?  @map("completed_at") @db.Timestamptz(3)
+  createdAt            DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  pull     Pull     @relation(fields: [pullId], references: [id], onDelete: Cascade)
+  policies Policy[]
+
+  @@unique([pullId, carrierId])
+  @@index([status, carrierId, availableAt])
+  @@index([status, leaseExpiresAt])
+  @@map("pull_tasks")
+}
+
+model Policy {
+  id               String    @id @default(uuid()) @db.Uuid
+  pullId           String    @map("pull_id") @db.Uuid
+  taskId           String    @map("task_id") @db.Uuid
+  carrierId        String    @map("carrier_id") @db.VarChar(64)
+  externalPolicyId String    @map("external_policy_id") @db.VarChar(128)
+  schemaVersion    String    @map("schema_version") @db.VarChar(16)
+  policyType       String    @map("policy_type") @db.VarChar(32)
+  status           String    @db.VarChar(32)
+  effectiveDate    DateTime? @map("effective_date") @db.Date
+  expirationDate   DateTime? @map("expiration_date") @db.Date
+  /// The full NormalizedPolicy document, validated against the versioned contract before insert.
+  document         Json
+  retrievedAt      DateTime  @map("retrieved_at") @db.Timestamptz(3)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  pull Pull     @relation(fields: [pullId], references: [id], onDelete: Cascade)
+  task PullTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, externalPolicyId])
+  @@index([pullId, carrierId, externalPolicyId])
+  @@map("policies")
+}

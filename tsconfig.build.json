@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "sourceMap": true
+  },
+  "include": ["src", "mock-carriers", "prisma/seed.ts"],
+  "exclude": ["test", "**/*.test.ts"]
+}
