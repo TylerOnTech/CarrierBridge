@@ -61,6 +61,7 @@ async function scrape(pages: PortalPages, credentials: UsernamePasswordCredentia
 
   /** Navigates to `path`, transparently re-logging in if the portal bounced us to /login. */
   const visit = async (path: string): Promise<void> => {
+    if (pages.isAt(path)) return; // e.g. login already redirected us here
     if ((await pages.goto(path)) === 'ok') return;
     if (++reauthentications > MAX_REAUTHENTICATIONS) {
       throw new CarrierError({
@@ -72,7 +73,7 @@ async function scrape(pages: PortalPages, credentials: UsernamePasswordCredentia
     }
     ctx.logger.info({ path, reauthentications }, 'portal session expired; logging in again');
     await pages.login(credentials); // the portal redirects back to `path` after login
-    if (pages.currentPath() !== new URL(path, 'http://x').pathname && (await pages.goto(path)) !== 'ok') {
+    if (!pages.isAt(path) && (await pages.goto(path)) !== 'ok') {
       throw new CarrierError({
         carrierId: CARRIER_C_ID,
         category: 'session_expired',

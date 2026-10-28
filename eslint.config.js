@@ -39,6 +39,8 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-argument': 'off',
       '@typescript-eslint/no-unsafe-call': 'off',
       '@typescript-eslint/no-non-null-assertion': 'off',
+      // Fake adapters are async to satisfy the interface without awaiting anything.
+      '@typescript-eslint/require-await': 'off',
     },
   },
   {
